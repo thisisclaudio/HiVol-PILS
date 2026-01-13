@@ -2,6 +2,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+# =========================
+# Plot-Schalter
+# =========================
+PLOT_SALT_DATA = True      # Salz + Tröpfchen anzeigen
+
+# =========================
+# Konstanten – 0.01 % AMS
+# =========================
+RHO_AS = 1.77      # g/cm³
+RHO_H2O = 0.9982  # g/cm³
+C = 1e-4          # 0.01 % m/m
+
+RHO_SOLUTION = 1.0 / (C / RHO_AS + (1.0 - C) / RHO_H2O)
+SCALING_FACTOR = (RHO_AS / (C * RHO_SOLUTION)) ** (1.0 / 3.0)
+
 
 def read_smps_raw_csv(file_path):
     with open(file_path, 'r', encoding='utf-8-sig') as f:
@@ -14,7 +29,7 @@ def read_smps_raw_csv(file_path):
             break
 
     if header is None:
-        raise ValueError("Header nicht gefunden")
+        raise ValueError("SMPS-Header nicht gefunden")
 
     df = pd.read_csv(file_path, skiprows=header)
 
@@ -29,6 +44,9 @@ def calc_stats(d_um, n):
     mask = n > 0
     d = d_um[mask]
     n = n[mask]
+
+    # log-bin width
+    dlogD = np.log10(d[1] / d[0])
 
     # Mode
     mode = d[np.argmax(n)]
@@ -47,19 +65,39 @@ if __name__ == "__main__":
 
     file_path = "data/2025-12-16_085457_SMPS_PARI_AMS_0_01_VK_Modul.csv"
 
-    diam_nm, conc_df = read_smps_raw_csv(file_path)
-    diam_um = diam_nm / 1000.0
+    diam_salt_nm, conc_df = read_smps_raw_csv(file_path)
+
+    diam_salt_um = diam_salt_nm / 1000.0
+    diam_drop_um = diam_salt_um * SCALING_FACTOR
 
     plt.figure(figsize=(10, 6))
 
+    # nur erster Scan für Text (sonst Chaos)
     first_stats = None
 
     for i, (_, row) in enumerate(conc_df.iterrows()):
         n = row.values
-        plt.plot(diam_um, n, alpha=0.6, label=f"Scan {i+1}" if i < 10 else None)
+
+        if PLOT_SALT_DATA:
+            plt.plot(
+                diam_salt_um,
+                n,
+                color="gray",
+                alpha=0.3,
+                linewidth=1,
+                label="Salzresiduum" if i == 0 else None
+            )
+
+        plt.plot(
+            diam_drop_um,
+            n,
+            alpha=0.7,
+            linewidth=2,
+            label="Tröpfchen" if i == 0 else None
+        )
 
         if i == 0:
-            first_stats = calc_stats(diam_um, n)
+            first_stats = calc_stats(diam_drop_um, n)
 
     mode, geomean, mmod = first_stats
 
@@ -77,12 +115,10 @@ if __name__ == "__main__":
     )
 
     plt.xscale("log")
-    plt.xlabel("Diameter (µm)")
+    plt.xlabel("Durchmesser (µm)")
     plt.ylabel("dN/dlogDp (#/cm³)")
-    plt.title("SMPS Rohdaten – alle Scans")
+    plt.title("SMPS: Salz → Tröpfchen (0.01% AMS)")
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-
-    if len(conc_df) <= 10:
-        plt.legend()
+    plt.legend()
 
     plt.show()
